@@ -1,0 +1,94 @@
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const { MongoClient } = require('mongodb');
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve index.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Serve profile image
+app.get('/profile-picture', (req, res) => {
+    const imgPath = path.join(__dirname, 'images', 'profile-1.jpg');
+
+    if (fs.existsSync(imgPath)) {
+        res.sendFile(imgPath);
+    } else {
+        res.status(404).send('Image not found');
+    }
+});
+
+// MongoDB Connection
+const mongoUrl = 'mongodb://admin:password@13.63.44.147:27017';
+const databaseName = 'my-db';
+
+async function getDb() {
+    const client = new MongoClient(mongoUrl);
+    await client.connect();
+    return {
+        db: client.db(databaseName),
+        client
+    };
+}
+
+// Get profile
+app.get('/get-profile', async (req, res) => {
+    let client;
+
+    try {
+        const connection = await getDb();
+        client = connection.client;
+
+        const user = await connection.db
+            .collection('users')
+            .findOne({ userid: 1 });
+
+        res.json(user || {});
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) await client.close();
+    }
+});
+
+// Update profile
+app.post('/update-profile', async (req, res) => {
+    let client;
+
+    try {
+        const connection = await getDb();
+        client = connection.client;
+
+        const userObj = {
+            userid: 1,
+            name: req.body.name,
+            email: req.body.email,
+            interests: req.body.interests
+        };
+
+        await connection.db.collection('users').updateOne(
+            { userid: 1 },
+            { $set: userObj },
+            { upsert: true }
+        );
+
+        res.json(userObj);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) await client.close();
+    }
+});
+
+// Listen on all interfaces (important for EC2)
+app.listen(3000, '0.0.0.0', () => {
+    console.log('Server running on port 3000');
+});
